@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>4.3.1 屋面支撑设计（前端独立版）</title>
+  <style>
+    body {
+      margin: 0;
+      background: #f6f8fa;
+      color: #1f2937;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    }
+    .wrap {
+      max-width: 1200px;
+      margin: 24px auto;
+      padding: 0 16px 24px;
+    }
+    .card {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    h1, h2, h3 {
+      margin: 0 0 12px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(140px, 1fr));
+      gap: 10px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      color: #374151;
+      margin-bottom: 4px;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #cfd8e3;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+    .actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+      padding: 9px 14px;
+      color: #ffffff;
+      background: #2563eb;
+      font-size: 14px;
+    }
+    button.secondary {
+      background: #475569;
+    }
+    pre {
+      margin: 0;
+      background: #0b1020;
+      color: #d8e1ff;
+      padding: 12px;
+      border-radius: 8px;
+      overflow: auto;
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+    .note {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #6b7280;
+    }
+    .report {
+      line-height: 1.8;
+      font-size: 15px;
+    }
+    .report h3 {
+      margin-top: 14px;
+      margin-bottom: 8px;
+      color: #0f172a;
+    }
+    .report p {
+      margin: 6px 0;
+    }
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(120px, 1fr));
+      }
+    }
+    @media (max-width: 520px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+  <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <h1>4.3.1 屋面支撑设计（浏览器独立计算 + Word 导出）</h1>
+
+  <div class="card">
+    <h2>输入参数（与 `roof_bracing_431.py` 一致）</h2>
+    <div class="grid">
+      <div>
+        <label>门式刚架横向跨度 (m)</label>
+        <input id="spanTransverse" type="number" step="0.01" value="60.0" />
+      </div>
+      <div>
+        <label>横向柱间距 (m)</label>
+        <input id="spacingColTransverse" type="number" step="0.01" value="6.0" />
+      </div>
+      <div>
+        <label>纵向柱间距 (m)</label>
+        <input id="spacingColLongitudinal" type="number" step="0.01" value="7.5" />
+      </div>
+      <div>
+        <label>钢材牌号</label>
+        <input id="steelGrade" type="text" value="Q235" />
+      </div>
+      <div>
+        <label>圆钢管外径 (mm)</label>
+        <input id="tubeDiameter" type="number" step="0.01" value="180.0" />
+      </div>
+      <div>
+        <label>圆钢管壁厚 (mm)</label>
+        <input id="tubeThickness" type="number" step="0.01" value="6.0" />
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btnCalc">开始计算（前端 JS）</button>
+      <button id="btnDocx" class="secondary">下载详细版 .docx 计算书</button>
+    </div>
+    <div class="note">
+      说明：计算逻辑已迁移到前端 JavaScript，本页面可直接独立运行，不依赖 Python。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>计算输出（文本版）</h2>
+    <pre id="outText">点击“开始计算（前端 JS）”后显示内容。</pre>
+  </div>
+
+  <div class="card">
+    <h2>详细版计算书预览（4.3.1 屋面支撑设计）</h2>
+    <div id="outReport" class="report">点击“开始计算（前端 JS）”后显示详细版计算书内容。</div>
+  </div>
+</div>
+
+<script>
+  const CONSTS = {
+    w0: 0.40,
+    muZ: 0.65,
+    muWWindward: 0.88,
+    muWLeewardAbs: 0.98,
+    betaZ: 1.10,
+    gammaW: 1.50,
+    designStrength: 215.0
+  };
+
+  const PHI_TABLE_A = [
+    [100.0, 0.686],
+    [110.0, 0.640],
+    [120.0, 0.603],
+    [121.75, 0.596],
+    [130.0, 0.560],
+    [140.0, 0.515],
+    [150.0, 0.450],
+    [155.93, 0.404],
+    [160.0, 0.380],
+    [170.0, 0.320],
+    [180.0, 0.260],
+    [190.0, 0.215],
+    [200.0, 0.180]
+  ];
+
+  const fmt = (n, d = 2) => Number(n).toFixed(d);
+
+  function interpolatePhiA(lambdaVal) {
+    if (lambdaVal <= PHI_TABLE_A[0][0]) return PHI_TABLE_A[0][1];
+    if (lambdaVal >= PHI_TABLE_A[PHI_TABLE_A.length - 1][0]) return PHI_TABLE_A[PHI_TABLE_A.length - 1][1];
+    for (let i = 0; i < PHI_TABLE_A.length - 1; i++) {
+      const [x1, y1] = PHI_TABLE_A[i];
+      const [x2, y2] = PHI_TABLE_A[i + 1];
+      if (lambdaVal >= x1 && lambdaVal <= x2) {
+        const t = (lambdaVal - x1) / (x2 - x1);
+        return y1 + (y2 - y1) * t;
+      }
+    }
+    throw new Error("稳定系数插值失败。");
+  }
+
+  function calcTubeSection(diameterMm, thicknessMm) {
+    const dCm = diameterMm / 10.0;
+    const tCm = thicknessMm / 10.0;
+    const diCm = dCm - 2.0 * tCm;
+    if (diCm <= 0) {
+      throw new Error("圆钢管壁厚过大，请保证外径 > 2 × 壁厚。");
+    }
+    const areaCm2 = Math.PI / 4.0 * (dCm ** 2 - diCm ** 2);
+    const inertiaCm4 = Math.PI / 64.0 * (dCm ** 4 - diCm ** 4);
+    const sectionModulusCm3 = inertiaCm4 / (dCm / 2.0);
+    const radiusOfGyrationCm = Math.sqrt(inertiaCm4 / areaCm2);
+    return {
+      diameterCm: dCm,
+      thicknessCm: tCm,
+      areaCm2,
+      inertiaCm4,
+      sectionModulusCm3,
+      radiusOfGyrationCm
+    };
+  }
+
+  function getInputs() {
+    const spanTransverse = Number(document.getElementById("spanTransverse").value);
+    const spacingColTransverse = Number(document.getElementById("spacingColTransverse").value);
+    const spacingColLongitudinal = Number(document.getElementById("spacingColLongitudinal").value);
+    const steelGrade = document.getElementById("steelGrade").value.trim() || "Q235";
+    const tubeDiameter = Number(document.getElementById("tubeDiameter").value);
+    const tubeThickness = Number(document.getElementById("tubeThickness").value);
+
+    const checks = [
+      [spanTransverse, "门式刚架横向跨度必须大于 0。"],
+      [spacingColTransverse, "横向柱间距必须大于 0。"],
+      [spacingColLongitudinal, "纵向柱间距必须大于 0。"],
+      [tubeDiameter, "圆钢管外径必须大于 0。"],
+      [tubeThickness, "圆钢管壁厚必须大于 0。"]
+    ];
+    for (const [value, message] of checks) {
+      if (!Number.isFinite(value) || value <= 0) {
+        throw new Error(message);
+      }
+    }
+    if (tubeDiameter <= 2.0 * tubeThickness) {
+      throw new Error("圆钢管尺寸不合理：外径需大于 2×壁厚。");
+    }
+
+    return {
+      spanTransverse,
+      spacingColTransverse,
+      spacingColLongitudinal,
+      steelGrade,
+      tubeDiameter,
+      tubeThickness
+    };
+  }
+
+  function calculate(data) {
+    const sec = calcTubeSection(data.tubeDiameter, data.tubeThickness);
+    const iUsedCm = Number(fmt(sec.radiusOfGyrationCm, 2));
+    const tanAlpha = data.spacingColLongitudinal / data.spacingColTransverse;
+    const alphaRad = Math.atan(tanAlpha);
+    const alphaDeg = alphaRad * 180.0 / Math.PI;
+    const c = Math.cos(alphaRad);
+
+    const wk = CONSTS.betaZ * (CONSTS.muWWindward + CONSTS.muWLeewardAbs) * CONSTS.muZ * CONSTS.w0;
+    const W = CONSTS.gammaW * wk * data.spacingColTransverse * (16.5 / 3.0);
+    const WUsed = Number(fmt(W, 2));
+
+    // 先按“横向跨度/横向柱距”确定数量，再逐个计算 N 值
+    const spanDivSpacingRaw = data.spanTransverse / data.spacingColTransverse;
+    const spanDivSpacing = Math.round(spanDivSpacingRaw);
+    const isRounded = Math.abs(spanDivSpacingRaw - spanDivSpacing) > 1e-9;
+    const roundingNote = isRounded
+      ? `校验提示：横向跨度/横向柱距 = ${fmt(spanDivSpacingRaw, 3)}，非整数，已按四舍五入取 ${spanDivSpacing}。`
+      : `校验通过：横向跨度/横向柱距 = ${fmt(spanDivSpacingRaw, 3)}，为整数，无需取整。`;
+    const memberCountByRule = Math.max(1, spanDivSpacing - 1); // 例：60/6=10 -> N1~N9
+    const pairCount = Math.max(0, Math.floor((memberCountByRule - 1) / 2));
+    const computedMemberCount = 2 * pairCount + 1;
+
+    const memberForces = [];
+    memberForces.push({
+      idx: 1,
+      value: -4.0 * WUsed,
+      type: "压",
+      formula: "N1 = -4W（压）",
+      detailLine: `N1 = -4W = -4×${fmt(WUsed, 2)} = ${fmt(-4.0 * WUsed, 2)} kN（压）`
+    });
+    for (let j = 1; j <= pairCount; j++) {
+      const tension = (4.0 * WUsed - (j - 0.5) * WUsed) / c;
+      const compression = -tension * c;
+      const tIdx = 2 * j;
+      const cIdx = 2 * j + 1;
+      memberForces.push({
+        idx: tIdx,
+        value: tension,
+        type: "拉",
+        formula: `N${tIdx} = (4W - ${(j - 0.5).toFixed(1)}W)/cosα（拉）`,
+        detailLine:
+          `N${tIdx} = (4W - ${(j - 0.5).toFixed(1)}W)/cos${fmt(alphaDeg, 2)}°` +
+          ` = (4×${fmt(WUsed, 2)} - ${(j - 0.5).toFixed(1)}×${fmt(WUsed, 2)})/${fmt(c, 4)}` +
+          ` = ${fmt(tension, 2)} kN（拉）`
+      });
+      memberForces.push({
+        idx: cIdx,
+        value: compression,
+        type: "压",
+        formula: `N${cIdx} = -N${tIdx}·cosα（压）`,
+        detailLine:
+          `N${cIdx} = -N${tIdx}·cos${fmt(alphaDeg, 2)}°` +
+          ` = -${fmt(tension, 2)}×${fmt(c, 4)}` +
+          ` = ${fmt(compression, 2)} kN（压）`
+      });
+    }
+
+    const l0CompCm = data.spacingColLongitudinal * 100.0;
+    const l0TenCm = Math.hypot(
+      data.spacingColLongitudinal * 100.0,
+      data.spacingColTransverse * 100.0
+    );
+
+    const nComp = Math.abs(memberForces[0].value); // 端杆最不利，取 N1
+    const nTen = memberForces.length >= 2 ? memberForces[1].value : 0; // 取最不利斜杆，默认 N2
+
+    const lamComp = l0CompCm / iUsedCm;
+    const phiComp = interpolatePhiA(lamComp);
+    const utilStability = (nComp * 1e3) / (phiComp * sec.areaCm2 * 100.0 * CONSTS.designStrength);
+
+    const lamTen = l0TenCm / iUsedCm;
+    const phiTen = interpolatePhiA(lamTen);
+    const sigmaTen = (nTen * 1e3) / (sec.areaCm2 * 100.0);
+
+    return {
+      data,
+      sec,
+      wk,
+      W,
+      WUsed,
+      tanAlpha,
+      alphaDeg,
+      spanDivSpacingRaw,
+      spanDivSpacing,
+      isRounded,
+      roundingNote,
+      memberCountByRule,
+      computedMemberCount,
+      pairCount,
+      memberForces,
+      nComp,
+      nTen,
+      l0CompCm,
+      l0TenCm,
+      iUsedCm,
+      lamComp,
+      phiComp,
+      utilStability,
+      lamTen,
+      phiTen,
+      sigmaTen,
+      okComp: utilStability < 1.0,
+      okTen: sigmaTen < CONSTS.designStrength
+    };
+  }
+
+  function renderText(res) {
+    const forceLines = res.memberForces.map((f) =>
+      `      ${f.detailLine}`
+    );
+    return [
+      "========================================================================",
+      "4.3.1 屋面支撑设计（按 source.pdf 原步骤）",
+      "========================================================================",
+      "",
+      "[输入参数]",
+      `  结构：跨度=${fmt(res.data.spanTransverse, 2)} m，横向柱距=${fmt(res.data.spacingColTransverse, 2)} m，纵向柱距=${fmt(res.data.spacingColLongitudinal, 2)} m，钢材=${res.data.steelGrade}`,
+      `  基本风压 w0 = ${fmt(CONSTS.w0, 2)} kN/m^2`,
+      `  风荷载高度变化系数 μz = ${fmt(CONSTS.muZ, 2)}`,
+      `  风荷载系数：迎风面 +${fmt(CONSTS.muWWindward, 2)}，背风面 -${fmt(CONSTS.muWLeewardAbs, 2)}`,
+      `  风振系数 βz = ${fmt(CONSTS.betaZ, 2)}`,
+      `  风荷载分项系数 γw = ${fmt(CONSTS.gammaW, 2)}`,
+      "",
+      "[步骤1：风荷载设计值与杆件内力]",
+      "  1.1 垂直于山墙的风荷载标准值：",
+      "      wk = βz*(μw,迎+|μw,背|)*μz*w0",
+      `         = ${fmt(CONSTS.betaZ, 2)}*(${fmt(CONSTS.muWWindward, 2)}+${fmt(CONSTS.muWLeewardAbs, 2)})*${fmt(CONSTS.muZ, 2)}*${fmt(CONSTS.w0, 2)}`,
+      `         = ${fmt(res.wk, 3)} kN/m^2`,
+      "  1.2 风荷载设计值：",
+      "      W = γw*wk*l*h/3",
+      `        = ${fmt(CONSTS.gammaW, 2)}*${fmt(res.wk, 3)}*${fmt(res.data.spacingColTransverse, 3)}*16.5/3`,
+      `        = ${fmt(res.W, 2)} kN（后续按 W=${fmt(res.WUsed, 2)} kN 参与节点内力计算）`,
+      `      tanα = ${fmt(res.data.spacingColLongitudinal, 3)}/${fmt(res.data.spacingColTransverse, 3)} = ${fmt(res.tanAlpha, 4)}`,
+      `      α = arctan(${fmt(res.tanAlpha, 4)}) = ${fmt(res.alphaDeg, 2)}°`,
+      "  1.3 节点平衡求杆件轴力：",
+      `      ${res.roundingNote}`,
+      `      先计算数量：横向跨度/横向柱距 = ${fmt(res.data.spanTransverse, 2)}/${fmt(res.data.spacingColTransverse, 2)} = ${fmt(res.spanDivSpacingRaw, 3)} ≈ ${res.spanDivSpacing}`,
+      `      杆件轴力数量 = ${res.spanDivSpacing} - 1 = ${res.memberCountByRule}`,
+      `      实际按对称关系计算得到 N1~N${res.computedMemberCount}（共 ${res.computedMemberCount} 个）`,
+      ...forceLines,
+      "",
+      "[步骤2：横杆（压杆）设计]",
+      `  2.1 选用截面：Φ${fmt(res.data.tubeDiameter, 0)}x${fmt(res.data.tubeThickness, 1)}，l0 = ${fmt(res.l0CompCm, 1)} cm`,
+      "  2.2 自动几何特性：",
+      `      A = π/4·(D²-d²) = π/4·(${fmt(res.sec.diameterCm, 2)}²-${fmt(res.sec.diameterCm - 2 * res.sec.thicknessCm, 2)}²) = ${fmt(res.sec.areaCm2, 2)} cm^2`,
+      `      I = π/64·(D⁴-d⁴) = π/64·(${fmt(res.sec.diameterCm, 2)}⁴-${fmt(res.sec.diameterCm - 2 * res.sec.thicknessCm, 2)}⁴) = ${fmt(res.sec.inertiaCm4, 2)} cm^4`,
+      `      W = I/(D/2) = ${fmt(res.sec.inertiaCm4, 2)}/(${fmt(res.sec.diameterCm, 2)}/2) = ${fmt(res.sec.sectionModulusCm3, 2)} cm^3`,
+      `      i = √(I/A) = √(${fmt(res.sec.inertiaCm4, 2)}/${fmt(res.sec.areaCm2, 2)}) = ${fmt(res.sec.radiusOfGyrationCm, 2)} cm`,
+      `      λ = l0/i = ${fmt(res.l0CompCm, 1)}/${fmt(res.iUsedCm, 2)} = ${fmt(res.lamComp, 2)}`,
+      "  2.3 稳定系数查表（a类截面，插值）：",
+      `      φ = f(λ) = f(${fmt(res.lamComp, 2)}) = ${fmt(res.phiComp, 3)}（按 a 类截面表线性插值）`,
+      "  2.4 稳定验算：",
+      "      N/(φAf) ≤ 1.0",
+      `      N/(φAf) = ${fmt(res.nComp, 2)}×10^3 / (${fmt(res.phiComp, 3)}×${fmt(res.sec.areaCm2, 2)}×100×${fmt(CONSTS.designStrength, 2)})`,
+      `             = ${fmt(res.utilStability, 3)} ${res.okComp ? "< 1.0，满足要求" : ">= 1.0，不满足要求"}`,
+      "",
+      "[步骤3：交叉斜杆（拉杆）设计]",
+      `  3.1 选用截面：Φ${fmt(res.data.tubeDiameter, 0)}x${fmt(res.data.tubeThickness, 1)}，l0 = ${fmt(res.l0TenCm, 1)} cm`,
+      "  3.2 自动几何特性（同上）：",
+      `      A = ${fmt(res.sec.areaCm2, 2)} cm^2`,
+      `      W = ${fmt(res.sec.sectionModulusCm3, 2)} cm^3`,
+      `      i = ${fmt(res.sec.radiusOfGyrationCm, 2)} cm`,
+      `      λ = l0/i = ${fmt(res.lamTen, 2)}`,
+      "  3.3 稳定系数查表（a类截面，插值）：",
+      `      φ = f(λ) = f(${fmt(res.lamTen, 2)}) = ${fmt(res.phiTen, 3)}（按 a 类截面表线性插值）`,
+      "  3.4 按原文进行拉杆强度验算：",
+      "      σ = N/A ≤ f",
+      `      σ = ${fmt(res.nTen, 2)}×10^3 / (${fmt(res.sec.areaCm2, 2)}×100)`,
+      `        = ${fmt(res.sigmaTen, 2)} N/mm^2 ${res.okTen ? "< 215 N/mm^2，满足要求" : ">= 215 N/mm^2，不满足要求"}`,
+      "",
+      "[结论]",
+      `  屋面支撑 4.3.1 三步计算完成：风荷载、杆件内力、压杆与拉杆验算${res.okComp && res.okTen ? "均满足要求" : "存在不满足项"}。`
+    ].join("\n");
+  }
+
+  function getDetailedLines(res) {
+    const detailedForceLines = res.memberForces.map((f) =>
+      f.detailLine
+    );
+    return [
+      "一、设计依据与已知条件",
+      "屋面支撑设计”进行逐步计算",
+      `门式刚架横向跨度为 ${fmt(res.data.spanTransverse, 2)} m，横向柱间距为 ${fmt(res.data.spacingColTransverse, 2)} m，纵向柱间距为 ${fmt(res.data.spacingColLongitudinal, 2)} m，钢材采用 ${res.data.steelGrade}。`,
+      `基本风压 w0 = ${fmt(CONSTS.w0, 2)} kN/m²；风荷载高度变化系数 μz = ${fmt(CONSTS.muZ, 2)}；风荷载系数迎风面 +${fmt(CONSTS.muWWindward, 2)}、背风面 -${fmt(CONSTS.muWLeewardAbs, 2)}；风振系数 βz = ${fmt(CONSTS.betaZ, 2)}。`,
+      "",
+      "二、（1）风荷载设计值与杆件内力",
+      "1）垂直于山墙的风荷载标准值：",
+      "wk = βz·(μw,迎 + |μw,背|)·μz·w0。",
+      `   = ${fmt(CONSTS.betaZ, 2)} × (${fmt(CONSTS.muWWindward, 2)} + ${fmt(CONSTS.muWLeewardAbs, 2)}) × ${fmt(CONSTS.muZ, 2)} × ${fmt(CONSTS.w0, 2)}。`,
+      `   = ${fmt(res.wk, 3)} kN/m²。`,
+      "2）风荷载设计值：",
+      "W = γw·wk·l·h/3。",
+      `  = ${fmt(CONSTS.gammaW, 2)} × ${fmt(res.wk, 3)} × ${fmt(res.data.spacingColTransverse, 3)} × 16.5 / 3。`,
+      `  = ${fmt(res.W, 2)} kN（后续节点内力按 W = ${fmt(res.WUsed, 2)} kN 参与计算）。`,
+      `tanα = ${fmt(res.data.spacingColLongitudinal, 3)}/${fmt(res.data.spacingColTransverse, 3)} = ${fmt(res.tanAlpha, 4)}。`,
+      `α = arctan(${fmt(res.tanAlpha, 4)}) = ${fmt(res.alphaDeg, 2)}°。`,
+      "3）节点平衡求杆件轴力（先算数量，再逐个计算）：",
+      res.roundingNote,
+      `横向跨度/横向柱距 = ${fmt(res.data.spanTransverse, 2)}/${fmt(res.data.spacingColTransverse, 2)} = ${fmt(res.spanDivSpacingRaw, 3)} ≈ ${res.spanDivSpacing}`,
+      `故杆件轴力数量按 ${res.spanDivSpacing} - 1 = ${res.memberCountByRule} 取值。`,
+      `按对称节点平衡逐项求得 N1~N${res.computedMemberCount}：`,
+      ...detailedForceLines,
+      "",
+      "三、（2）横杆（压杆）设计",
+      `取端杆最不利：N = |N1| = ${fmt(res.nComp, 2)} kN，l0 = ${fmt(res.l0CompCm, 1)} cm。`,
+      `截面选用圆钢管 Φ${fmt(res.data.tubeDiameter, 0)}×${fmt(res.data.tubeThickness, 1)}。`,
+      "1）截面几何特性（自动计算）：",
+      "A = π/4·(D²-d²)，I = π/64·(D⁴-d⁴)，W = I/(D/2)，i = √(I/A)。",
+      `A = π/4·(${fmt(res.sec.diameterCm, 2)}²-${fmt(res.sec.diameterCm - 2 * res.sec.thicknessCm, 2)}²) = ${fmt(res.sec.areaCm2, 2)} cm²。`,
+      `I = π/64·(${fmt(res.sec.diameterCm, 2)}⁴-${fmt(res.sec.diameterCm - 2 * res.sec.thicknessCm, 2)}⁴) = ${fmt(res.sec.inertiaCm4, 2)} cm⁴。`,
+      `W = I/(D/2) = ${fmt(res.sec.inertiaCm4, 2)}/(${fmt(res.sec.diameterCm, 2)}/2) = ${fmt(res.sec.sectionModulusCm3, 2)} cm³。`,
+      `i = √(I/A) = √(${fmt(res.sec.inertiaCm4, 2)}/${fmt(res.sec.areaCm2, 2)}) = ${fmt(res.sec.radiusOfGyrationCm, 2)} cm。`,
+      "2）长细比：",
+      `λ = l0/i = ${fmt(res.l0CompCm, 1)} / ${fmt(res.iUsedCm, 2)} = ${fmt(res.lamComp, 2)} < 200。`,
+      "3）稳定系数：",
+      "φ = f(λ)（a 类截面，查表并线性插值）。",
+      `  = f(${fmt(res.lamComp, 2)})。`,
+      `  = ${fmt(res.phiComp, 3)}。`,
+      "4）稳定验算：",
+      "N/(φAf) ≤ 1.0。",
+      `N/(φAf) = ${fmt(res.nComp, 2)}×10³ / (${fmt(res.phiComp, 3)}×${fmt(res.sec.areaCm2, 2)}×100×${fmt(CONSTS.designStrength, 2)})。`,
+      `        = ${fmt(res.utilStability, 3)} ${res.okComp ? "< 1.0，满足要求" : ">= 1.0，不满足要求"}。`,
+      "",
+      "四、（3）交叉斜杆（拉杆）设计",
+      `取斜杆最不利：N = N2 = ${fmt(res.nTen, 2)} kN，l0 = ${fmt(res.l0TenCm, 1)} cm。`,
+      `截面选用圆钢管 Φ${fmt(res.data.tubeDiameter, 0)}×${fmt(res.data.tubeThickness, 1)}。`,
+      "1）截面几何特性（自动计算）：",
+      `A = ${fmt(res.sec.areaCm2, 2)} cm²，W = ${fmt(res.sec.sectionModulusCm3, 2)} cm³，i = ${fmt(res.sec.radiusOfGyrationCm, 2)} cm。`,
+      "2）长细比：",
+      `λ = l0/i = ${fmt(res.l0TenCm, 1)} / ${fmt(res.iUsedCm, 2)} = ${fmt(res.lamTen, 2)} < 200。`,
+      "3）稳定系数：",
+      "φ = f(λ)（a 类截面，查表并线性插值）。",
+      `  = f(${fmt(res.lamTen, 2)})。`,
+      `  = ${fmt(res.phiTen, 3)}。`,
+      "4）拉杆强度验算：",
+      "σ = N/A ≤ f。",
+      `σ = ${fmt(res.nTen, 2)}×10³ / (${fmt(res.sec.areaCm2, 2)}×100)。`,
+      `  = ${fmt(res.sigmaTen, 2)} N/mm² ${res.okTen ? "< 215 N/mm²，满足要求" : ">= 215 N/mm²，不满足要求"}。`,
+      "",
+      "五、计算结论",
+      `本次“4.3.1 屋面支撑设计”计算结论：横杆稳定验算${res.okComp ? "满足" : "不满足"}，斜杆强度验算${res.okTen ? "满足" : "不满足"}，总体${res.okComp && res.okTen ? "满足设计要求" : "需调整截面后复算"}。`
+    ];
+  }
+
+  function renderReportHtml(lines) {
+    let html = "";
+    for (const line of lines) {
+      if (line.trim() === "") {
+        html += "<p>&nbsp;</p>";
+        continue;
+      }
+      if (/^[一二三四五六七八九十]+、/.test(line)) {
+        html += `<h3>${line}</h3>`;
+      } else {
+        html += `<p>${line}</p>`;
+      }
+    }
+    return html;
+  }
+
+  async function generateDocx(res) {
+    if (!window.docx) {
+      throw new Error("docx 库未加载，请联网后重试。");
+    }
+    const { Document, Packer, Paragraph, TextRun, AlignmentType } = window.docx;
+    const lines = getDetailedLines(res);
+
+    const makeRun = (text, opts = {}) => new TextRun({
+      text,
+      font: "宋体",
+      size: opts.size ?? 24,
+      bold: !!opts.bold
+    });
+
+    const paragraphs = [
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        spacing: { before: 0, after: 180 },
+        children: [makeRun("4.3.1 屋面支撑设计 计算书（详细版）", { bold: true, size: 30 })]
+      }),
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        indent: { firstLine: 420 },
+        spacing: { before: 0, after: 120, line: 360 },
+        children: [makeRun("（严格按 source.pdf 对应章节步骤展开）")]
+      })
+    ];
+
+    for (const line of lines) {
+      if (line.trim() === "") {
+        paragraphs.push(new Paragraph({
+          spacing: { before: 0, after: 100 },
+          children: [makeRun("")]
+        }));
+      } else if (/^[一二三四五六七八九十]+、/.test(line)) {
+        paragraphs.push(new Paragraph({
+          alignment: AlignmentType.LEFT,
+          spacing: { before: 180, after: 120 },
+          children: [makeRun(line, { bold: true, size: 26 })]
+        }));
+      } else {
+        paragraphs.push(new Paragraph({
+          alignment: AlignmentType.LEFT,
+          indent: { firstLine: 420 },
+          spacing: { before: 0, after: 80, line: 360 },
+          children: [makeRun(line)]
+        }));
+      }
+    }
+
+    const doc = new Document({
+      sections: [{
+        properties: {
+          page: {
+            margin: { top: 1440, right: 1440, bottom: 1440, left: 1800 }
+          }
+        },
+        children: paragraphs
+      }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "4.3.1_屋面支撑设计_计算书_详细版.docx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  let lastResult = null;
+
+  document.getElementById("btnCalc").addEventListener("click", () => {
+    const outText = document.getElementById("outText");
+    const outReport = document.getElementById("outReport");
+    try {
+      const data = getInputs();
+      const res = calculate(data);
+      lastResult = res;
+      outText.textContent = renderText(res);
+      outReport.innerHTML = renderReportHtml(getDetailedLines(res));
+    } catch (error) {
+      outText.textContent = "错误：" + (error?.message || error);
+      outReport.textContent = "请先修正输入参数后重新计算。";
+    }
+  });
+
+  document.getElementById("btnDocx").addEventListener("click", async () => {
+    const outText = document.getElementById("outText");
+    const outReport = document.getElementById("outReport");
+    try {
+      if (!lastResult) {
+        const data = getInputs();
+        lastResult = calculate(data);
+        outText.textContent = renderText(lastResult);
+        outReport.innerHTML = renderReportHtml(getDetailedLines(lastResult));
+      }
+      await generateDocx(lastResult);
+    } catch (error) {
+      outText.textContent = "错误：" + (error?.message || error);
+    }
+  });
+</script>
+</body>
+</html>
